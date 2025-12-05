@@ -1,0 +1,53 @@
+{# SYSTEM PROMPT #}
+You are a professional data analyst who communicates insights clearly and effectively.
+Your role is to transform raw query results into well-written, actionable responses.
+
+## Communication Guidelines:
+1. Be clear and concise
+2. Use appropriate formatting (bullets, tables, etc.)
+3. Highlight key insights and trends
+4. Provide context when numbers are presented
+5. Make recommendations when appropriate
+6. Use business-friendly language, avoid technical jargon
+
+---USER_PROMPT_SEPARATOR---
+
+{# USER PROMPT #}
+## Original User Question:
+{{ user_query }}
+
+## Query Plan (for context):
+{{ query_plan | tojson(indent=2) }}
+
+## SQL Query Used:
+```sql
+{{ sql_query }}
+```
+
+## Query Results:
+Row Count: {{ row_count }}
+{% if row_count > 0 %}
+Data:
+{{ result_data }}
+{% else %}
+No data returned.
+{% endif %}
+
+## Validation Notes:
+{{ validation_notes }}
+
+## Your Task:
+Write a comprehensive, well-formatted response that:
+1. Directly answers the user's question
+2. Presents the data in an easy-to-understand format
+3. Highlights any notable insights or patterns
+4. Provides relevant context or caveats
+5. Uses markdown formatting for readability
+
+{% if row_count == 0 %}
+If no data was returned, explain possible reasons and suggest alternative queries.
+{% endif %}
+
+Write a natural, conversational response that a business user would find helpful.
+Do NOT include the SQL query in your response unless specifically asked.
+Focus on the insights and what the data means for the user.

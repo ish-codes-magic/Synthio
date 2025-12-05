@@ -1,0 +1,81 @@
+[project]
+name = "synthio"
+version = "0.1.0"
+description = "Synthio - AI-powered pharmaceutical data analytics chatbot"
+requires-python = ">=3.10"
+dependencies = [
+    # Core dependencies
+    "pandas>=2.0.0",
+    "sqlalchemy>=2.0.0",
+    "plotly>=5.18.0",
+    "jinja2>=3.1.0",
+    "tabulate>=0.9.0",
+    
+    # LangGraph and LangChain
+    "langgraph>=0.2.0",
+    "langchain>=0.3.0",
+    "langchain-core>=0.3.0",
+    "langchain-openai>=0.2.0",
+]
+
+[project.optional-dependencies]
+# Database backends
+postgresql = [
+    "psycopg2-binary>=2.9.0",
+]
+mysql = [
+    "pymysql>=1.1.0",
+]
+
+# Alternative LLM providers
+anthropic = [
+    "langchain-anthropic>=0.2.0",
+]
+ollama = [
+    "langchain-ollama>=0.2.0",
+]
+
+# Development dependencies
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+]
+
+# All optional dependencies
+all = [
+    "psycopg2-binary>=2.9.0",
+    "pymysql>=1.1.0",
+    "langchain-anthropic>=0.2.0",
+    "langchain-ollama>=0.2.0",
+]
+
+[project.scripts]
+synthio-chat = "chatbot.main:run_cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["chatbot"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
