@@ -4,6 +4,9 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 @dataclass
