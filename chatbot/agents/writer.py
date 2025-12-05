@@ -20,7 +20,7 @@ class WriterAgent(BaseAgent):
     
     @property
     def prompt_template(self) -> str:
-        return "writer.jinja"
+        return "writer.j2"
     
     @property
     def agent_name(self) -> str:

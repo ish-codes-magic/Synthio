@@ -21,7 +21,7 @@ class ValidatorAgent(BaseAgent):
     
     @property
     def prompt_template(self) -> str:
-        return "validator.jinja"
+        return "validator.j2"
     
     @property
     def agent_name(self) -> str:

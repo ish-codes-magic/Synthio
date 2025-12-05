@@ -33,7 +33,7 @@ class SQLGeneratorAgent(BaseAgent):
 
     @property
     def prompt_template(self) -> str:
-        return "sql_generator.jinja"
+        return "sql_generator.j2"
 
     @property
     def agent_name(self) -> str:

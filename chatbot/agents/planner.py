@@ -23,7 +23,7 @@ class PlannerAgent(BaseAgent):
 
     @property
     def prompt_template(self) -> str:
-        return "planner.jinja"
+        return "planner.j2"
 
     @property
     def agent_name(self) -> str:
