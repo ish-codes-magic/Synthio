@@ -10,8 +10,10 @@ Usage:
     python run_chatbot.py --help                    # Show help
 """
 
+# ⚠️ CRITICAL: Import config FIRST to set up LangSmith before any LangChain imports
+from chatbot.core.config import settings  # noqa: F401
+
 from chatbot.main import run_cli
 
 if __name__ == "__main__":
     run_cli()
-

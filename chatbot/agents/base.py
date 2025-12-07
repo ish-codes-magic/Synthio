@@ -18,6 +18,7 @@ class BaseAgent(ABC):
     Abstract base class for all agents in the workflow.
 
     Provides common functionality for prompt rendering and LLM interaction.
+    All LLM calls are automatically traced when LangSmith is enabled.
     """
 
     def __init__(self, llm_client: Any):
@@ -129,6 +130,9 @@ class BaseAgent(ABC):
         """
         Invoke the LLM with the given prompts.
 
+        LLM calls are automatically traced by LangChain when LangSmith is enabled.
+        The trace includes the agent name, prompts, and response.
+
         Args:
             system_prompt: System instruction prompt
             user_prompt: User query prompt
@@ -143,5 +147,24 @@ class BaseAgent(ABC):
             HumanMessage(content=user_prompt),
         ]
 
-        response = await self.llm.ainvoke(messages)
+        # LangChain automatically traces this call when LANGCHAIN_TRACING_V2=true
+        # The trace will include:
+        # - Model name, provider, temperature
+        # - Input messages (system + user prompts)
+        # - Output response
+        # - Token usage and latency
+        response = await self.llm.ainvoke(
+            messages,
+            config={
+                "run_name": f"{self.agent_name} LLM Call",
+                "tags": [f"agent:{self.agent_name}"],
+                "metadata": {
+                    "agent_name": self.agent_name,
+                    "template": self.prompt_template,
+                    "system_prompt_length": len(system_prompt),
+                    "user_prompt_length": len(user_prompt),
+                },
+            },
+        )
+
         return response.content

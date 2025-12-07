@@ -9,10 +9,21 @@ import pandas as pd
 
 class AgentRole(str, Enum):
     """Enumeration of agent roles in the workflow."""
+    GUARDRAIL = "guardrail"
     PLANNER = "planner"
     SQL_GENERATOR = "sql_generator"
     VALIDATOR = "validator"
     WRITER = "writer"
+
+
+@dataclass
+class GuardrailResult:
+    """Result from the guardrail agent."""
+    decision: str  # "ALLOW" or "BLOCK"
+    category: str  # Type of issue detected
+    confidence: float  # 0.0 to 1.0
+    reasoning: str  # Internal reasoning
+    user_response: str  # Message to show user if blocked
 
 
 @dataclass
@@ -71,6 +82,10 @@ class AgentState(TypedDict, total=False):
 
     # Database schema context
     schema_context: str
+
+    # Guardrail agent output
+    guardrail_result: dict[str, Any]
+    guardrail_passed: bool
 
     # Planner agent output (natural language instructions)
     query_plan: dict[str, Any]

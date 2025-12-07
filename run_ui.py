@@ -10,6 +10,9 @@ Usage:
     python run_ui.py --share            # Create public share link
 """
 
+1# ⚠️ CRITICAL: Import config FIRST to set up LangSmith before any LangChain imports
+from chatbot.core.config import settings  # noqa: F401
+
 import argparse
 
 from chatbot.ui.app import launch_app
@@ -50,6 +53,8 @@ def main():
     print(f"   Server: http://{args.host}:{args.port}")
     if args.share:
         print("   Public sharing: Enabled")
+    if settings.is_tracing_enabled():
+        print(f"   LangSmith: Enabled (project: {settings.langsmith_project})")
     print()
 
     launch_app(
@@ -62,4 +67,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

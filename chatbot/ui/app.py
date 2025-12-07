@@ -1,10 +1,26 @@
 """Gradio chat interface for the Synthio chatbot."""
 
-from typing import Any, Generator
+# ⚠️ CRITICAL: Import config FIRST to set up LangSmith before any LangChain imports
+from chatbot.core.config import settings  # noqa: F401
+
+import asyncio
+import concurrent.futures
 
 import gradio as gr
 
-from chatbot.graph.workflow import create_workflow, SynthioWorkflow
+from chatbot.graph.workflow import SynthioWorkflow, create_workflow
+
+# Thread pool for running async code efficiently
+_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+
+def _run_async(coro):
+    """Run an async coroutine in a new event loop efficiently."""
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 class SynthioChatUI:
@@ -14,39 +30,51 @@ class SynthioChatUI:
         """Initialize the chat UI."""
         self.db_path = db_path
         self._workflow: SynthioWorkflow | None = None
+        # Pre-initialize workflow to avoid first-call delay
+        self._ensure_workflow()
+
+    def _ensure_workflow(self) -> SynthioWorkflow:
+        """Ensure workflow is initialized."""
+        if self._workflow is None:
+            print("🔧 Initializing workflow (this happens once)...")
+            self._workflow = create_workflow(db_path=self.db_path)
+            print("✅ Workflow ready!")
+        return self._workflow
 
     @property
     def workflow(self) -> SynthioWorkflow:
-        """Lazy initialization of the workflow."""
-        if self._workflow is None:
-            self._workflow = create_workflow(db_path=self.db_path)
-        return self._workflow
+        """Get the workflow instance."""
+        return self._ensure_workflow()
 
-    def process_query_sync(self, query: str) -> tuple[str, str]:
+    def process_query(self, query: str) -> tuple[str, str, bool]:
         """
-        Process a user query synchronously.
+        Process a user query.
 
         Args:
             query: User's question
 
         Returns:
-            Tuple of (response_markdown, sql_query)
+            Tuple of (response_markdown, sql_query, was_blocked)
         """
-        import asyncio
-
         try:
-            # Execute the workflow
-            result = asyncio.run(self.workflow.execute(query.strip()))
+            # Execute the workflow using the thread pool
+            result = _run_async(self.workflow.execute(query.strip()))
+
+            # Check if query was blocked by guardrail
+            guardrail_passed = result.get("guardrail_passed", True)
 
             # Extract response and SQL
             response = result.get("final_response", "I couldn't generate a response.")
             sql_query = result.get("sql_query", "")
 
-            return response, sql_query
+            # If blocked, there won't be SQL
+            was_blocked = not guardrail_passed
+
+            return response, sql_query, was_blocked
 
         except Exception as e:
             error_msg = f"❌ **Error:** {str(e)}\n\nPlease click 'New Chat' and try again."
-            return error_msg, ""
+            return error_msg, "", False
 
 
 def create_app(db_path: str = "synthio.db") -> gr.Blocks:
@@ -59,6 +87,8 @@ def create_app(db_path: str = "synthio.db") -> gr.Blocks:
     Returns:
         Gradio Blocks app
     """
+    # Pre-initialize the chat UI (and workflow) at app creation time
+    print("🚀 Starting Synthio Chatbot...")
     chat_ui = SynthioChatUI(db_path=db_path)
 
     with gr.Blocks(title="Synthio Chatbot") as app:
@@ -111,17 +141,18 @@ def create_app(db_path: str = "synthio.db") -> gr.Blocks:
                 value="*Ask a question about your pharmaceutical data...*",
             )
 
-            # SQL Query accordion (collapsible)
+            # SQL Query accordion
             with gr.Accordion(
                 "📝 View Generated SQL Query",
                 open=False,
-                visible=False,
-            ) as sql_accordion:
+                visible=True,
+            ):
                 sql_output = gr.Textbox(
                     label="SQL Query",
                     lines=10,
                     max_lines=20,
                     interactive=False,
+                    value="-- SQL will appear here after you ask a question --",
                 )
 
             # New chat prompt (shown after response)
@@ -138,106 +169,92 @@ def create_app(db_path: str = "synthio.db") -> gr.Blocks:
             """,
         )
 
-        # Generator function for streaming updates
-        def on_submit_generator(query: str, has_resp: bool) -> Generator:
-            """Handle submit with loading state."""
-            # If already has a response, don't process
+        def on_submit(query: str, has_resp: bool):
+            """Handle submit - simple function, no generator."""
+            # If already has a response, don't process again
             if has_resp:
-                yield (
-                    gr.update(visible=False),  # loading_indicator
-                    "⚠️ **Please click 'New Chat' to ask another question.**",  # response
-                    "",  # sql
-                    True,  # has_response state
-                    gr.update(visible=False),  # sql_accordion
-                    gr.update(visible=False),  # new_chat_prompt
-                    gr.update(interactive=False),  # submit_btn
+                return (
+                    gr.update(visible=False),
+                    "⚠️ **Please click 'New Chat' to ask another question.**",
+                    gr.update(),
+                    True,
+                    gr.update(visible=True),
+                    gr.update(interactive=False, value="🔍 Ask Question"),
                 )
-                return
 
+            # Empty query case
             if not query or not query.strip():
-                yield (
-                    gr.update(visible=False),  # loading_indicator
-                    "⚠️ Please enter a question about your data.",  # response
-                    "",  # sql
-                    False,  # has_response state
-                    gr.update(visible=False),  # sql_accordion
-                    gr.update(visible=False),  # new_chat_prompt
-                    gr.update(interactive=True),  # submit_btn
+                return (
+                    gr.update(visible=False),
+                    "⚠️ Please enter a question about your data.",
+                    gr.update(),
+                    False,
+                    gr.update(visible=False),
+                    gr.update(interactive=True, value="🔍 Ask Question"),
                 )
-                return
 
-            # Step 1: Show loading state immediately, disable button
-            yield (
-                gr.update(value="⏳ **Generating response...** Please wait while our AI agents analyze your question.", visible=True),  # loading
-                "*Processing your query...*",  # response placeholder
-                "",  # sql empty
-                False,  # has_response stays false during processing
-                gr.update(visible=False),  # hide sql accordion
-                gr.update(visible=False),  # hide new chat prompt
-                gr.update(interactive=False, value="⏳ Processing..."),  # disable button with loading text
-            )
+            # Process the query
+            response, sql_query, was_blocked = chat_ui.process_query(query)
 
-            # Step 2: Process the query
-            response, sql_query = chat_ui.process_query_sync(query)
-
-            # Step 3: Show final results
+            # Determine what to show
             has_error = "Error" in response
-            show_sql = bool(sql_query) and not has_error
-            
-            print(f"sql_query: {sql_query}")
-            print(f"show_sql: {show_sql}")
 
-            yield (
-                gr.update(visible=False),  # hide loading indicator
-                response,  # final response
-                sql_query if sql_query else "-- No SQL query generated --",  # sql
-                True,  # mark has_response as True
-                gr.update(visible=show_sql, open=False),  # show sql accordion if we have SQL
-                gr.update(visible=not has_error),  # show new chat prompt if no error
-                gr.update(interactive=False, value="🔍 Ask Question"),  # keep button disabled, restore text
+            # SQL value
+            if was_blocked:
+                sql_value = "-- Query was not processed (see response above) --"
+            elif sql_query:
+                sql_value = sql_query
+            else:
+                sql_value = "-- No SQL query generated --"
+
+            return (
+                gr.update(visible=False),
+                response,
+                sql_value,
+                True,
+                gr.update(visible=not has_error),
+                gr.update(interactive=False, value="🔍 Ask Question"),
             )
 
         def on_new_chat():
             """Reset the chat to initial state."""
             return (
-                gr.update(visible=False),  # loading_indicator
-                "",  # query_input
-                "*Ask a question about your pharmaceutical data...*",  # response
-                "",  # sql
-                False,  # has_response
-                gr.update(visible=False),  # sql_accordion
-                gr.update(visible=False),  # new_chat_prompt
-                gr.update(interactive=True, value="🔍 Ask Question"),  # submit_btn
+                gr.update(visible=False),
+                "",
+                "*Ask a question about your pharmaceutical data...*",
+                "-- SQL will appear here after you ask a question --",
+                False,
+                gr.update(visible=False),
+                gr.update(interactive=True, value="🔍 Ask Question"),
             )
 
-        # Connect events
         submit_btn.click(
-            fn=on_submit_generator,
+            fn=on_submit,
             inputs=[query_input, has_response],
             outputs=[
                 loading_indicator,
                 response_output,
                 sql_output,
                 has_response,
-                sql_accordion,
                 new_chat_prompt,
                 submit_btn,
             ],
+            show_progress="full",  # This shows the built-in Gradio loading indicator
         )
 
         # Allow Enter key to submit
         query_input.submit(
-            fn=on_submit_generator,
+            fn=on_submit,
             inputs=[query_input, has_response],
             outputs=[
                 loading_indicator,
                 response_output,
                 sql_output,
                 has_response,
-                sql_accordion,
                 new_chat_prompt,
                 submit_btn,
             ],
+            show_progress="full",
         )
 
         new_chat_btn.click(
@@ -249,7 +266,6 @@ def create_app(db_path: str = "synthio.db") -> gr.Blocks:
                 response_output,
                 sql_output,
                 has_response,
-                sql_accordion,
                 new_chat_prompt,
                 submit_btn,
             ],
