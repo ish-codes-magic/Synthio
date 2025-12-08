@@ -1,6 +1,31 @@
-# Synthio# Synthio Chatbot
+# Synthio Chatbot
 
-Chatbot submitted as part of assignment for Synthio labs.
+AI-powered pharmaceutical data analytics chatbot built with LangGraph multi-agent architecture.
+
+## Features
+
+- 🤖 **Multi-Agent Architecture** - Specialized agents for planning, SQL generation, validation, and response writing
+- 🛡️ **Guardrail Protection** - Filters irrelevant queries and blocks jailbreak attempts
+- 🔍 **Natural Language to SQL** - Converts business questions to optimized SQLite queries
+- 📊 **LangSmith Observability** - Full tracing and monitoring of all LLM calls
+- 🖥️ **Gradio Web UI** - Beautiful, responsive chat interface
+- 🔄 **Auto-Retry** - Validates results and retries if confidence is low
+
+## Quick Start
+
+```bash
+# 1. Install dependencies
+uv sync
+
+# 2. Configure environment
+cp chatbot/config.example.env .env
+# Edit .env with your API keys
+
+# 3. Launch the Web UI
+python run_ui.py
+```
+
+Open http://localhost:7860 in your browser.
 
 ## Architecture
 
@@ -14,138 +39,128 @@ The chatbot uses a **multi-agent architecture** with clear separation of respons
                                 │
                                 ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  🔒 GAURDRAIL AGENT                            │
+│  🛡️ GUARDRAIL AGENT (Security Filter)                               │
 │                                                                      │
-│  Role: Understand the question, provide natural language instructions│
+│  Role: Filter irrelevant/harmful queries before processing          │
 │                                                                      │
-│  Output Example:                                                     │
-│  "Get the total prescription count for each doctor. Include their   │
-│   name and specialty. Rank from highest to lowest prescriptions.    │
-│   Show only the top 10 performers."                                 │
+│  Checks for:                                                        │
+│  - Off-topic questions (weather, sports, coding help)               │
+│  - Prompt injection attempts ("ignore instructions", "pretend")     │
+│  - SQL injection patterns                                           │
+│  - Medical advice requests                                          │
+│  - Harmful content requests                                         │
 │                                                                      │
-│  Does NOT specify: table names, joins, SQL syntax                   │
-└─────────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  🎯 PLANNER AGENT (The Business Analyst)                             │
-│                                                                      │
-│  Role: Understand the question, provide natural language instructions│
-│                                                                      │
-│  Output Example:                                                     │
-│  "Get the total prescription count for each doctor. Include their   │
-│   name and specialty. Rank from highest to lowest prescriptions.    │
-│   Show only the top 10 performers."                                 │
-│                                                                      │
-│  Does NOT specify: table names, joins, SQL syntax                   │
-└─────────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  💾 SQL GENERATOR AGENT (The Technical Expert)                       │
-│                                                                      │
-│  Role: Figure out HOW to implement the instructions                  │
-│                                                                      │
-│  Responsibilities:                                                   │
-│  - Identify which tables are needed (hcp_dim, fact_rx)              │
-│  - Determine joins (hcp_id relationship)                            │
-│  - Write optimal SQL query                                          │
-│  - Execute and return results                                       │
-└─────────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  ✅ VALIDATOR AGENT                                                  │
-│  - Checks if results answer the question                             │
-│  - Validates data quality and logic                                  │
-│  - Triggers retry if confidence is low                               │
+│  Output: ALLOW → Continue | BLOCK → Friendly rejection message      │
 └─────────────────────────────────────────────────────────────────────┘
                                 │
                     ┌───────────┴───────────┐
                     │                       │
                     ▼                       ▼
-              [Retry SQL]           ┌─────────────────────────────────┐
-                                    │  ✍️ WRITER AGENT                 │
-                                    │  - Formats results for humans    │
-                                    │  - Highlights key insights       │
-                                    │  - Generates final response      │
-                                    └─────────────────────────────────┘
-                                                    │
-                                                    ▼
-                                    ┌─────────────────────────────────┐
-                                    │        Final Response            │
-                                    └─────────────────────────────────┘
+              [BLOCKED]              [ALLOWED]
+                    │                       │
+                    ▼                       ▼
+         Friendly rejection    ┌─────────────────────────────────────┐
+         message to user       │  🎯 PLANNER AGENT (Business Analyst) │
+                               │                                      │
+                               │  Role: Understand the question and   │
+                               │  provide natural language instructions│
+                               │                                      │
+                               │  Output Example:                     │
+                               │  "Get total prescription count for   │
+                               │   each doctor. Include name and      │
+                               │   specialty. Rank highest to lowest. │
+                               │   Show only top 10."                 │
+                               │                                      │
+                               │  Does NOT specify: table names,      │
+                               │  joins, SQL syntax                   │
+                               └─────────────────────────────────────┘
+                                               │
+                                               ▼
+                               ┌─────────────────────────────────────┐
+                               │  💾 SQL GENERATOR AGENT              │
+                               │     (Technical Expert)               │
+                               │                                      │
+                               │  Role: Implement the instructions    │
+                               │                                      │
+                               │  Responsibilities:                   │
+                               │  - Identify needed tables            │
+                               │  - Determine optimal joins           │
+                               │  - Write efficient SQL               │
+                               │  - Execute and return results        │
+                               └─────────────────────────────────────┘
+                                               │
+                                               ▼
+                               ┌─────────────────────────────────────┐
+                               │  ✅ VALIDATOR AGENT                  │
+                               │                                      │
+                               │  - Checks if results answer question │
+                               │  - Validates data quality            │
+                               │  - Triggers retry if confidence low  │
+                               └─────────────────────────────────────┘
+                                               │
+                                   ┌───────────┴───────────┐
+                                   │                       │
+                                   ▼                       ▼
+                             [Retry SQL]           ┌──────────────────┐
+                             (max 3x)              │ ✍️ WRITER AGENT   │
+                                                   │                  │
+                                                   │ - Format results │
+                                                   │ - Add insights   │
+                                                   │ - Generate final │
+                                                   │   response       │
+                                                   └──────────────────┘
+                                                           │
+                                                           ▼
+                                                   ┌──────────────────┐
+                                                   │  Final Response   │
+                                                   └──────────────────┘
 ```
-
-## Agent Responsibilities
-
-### 🎯 Planner Agent
-- **Acts as**: Business Analyst / Product Manager
-- **Input**: User's natural language question
-- **Output**: Detailed natural language instructions
-- **Does NOT**: Mention table names, column names, or SQL syntax
-
-Example output:
-```json
-{
-  "user_intent": "Find the highest-performing doctors by prescription volume",
-  "instructions": "Get the total number of prescriptions written by each doctor. Include the doctor's full name and their medical specialty. Rank them from highest to lowest prescription count. Return only the top 10.",
-  "output_requirements": ["Doctor name", "Specialty", "Total prescriptions"],
-  "sorting_preference": "Descending by prescription count",
-  "limit_preference": "Top 10"
-}
-```
-
-### 💾 SQL Generator Agent
-- **Acts as**: Database Expert / SQL Developer
-- **Input**: Natural language instructions from Planner
-- **Output**: Optimized SQL query + execution results
-- **Responsibilities**: 
-  - Interpret business requirements
-  - Select appropriate tables and columns
-  - Design efficient joins
-  - Write clean, performant SQL
-
-### ✅ Validator Agent
-- **Acts as**: QA Analyst
-- **Checks**: Result correctness, data quality, logical consistency
-- **Can trigger**: Retry loop if confidence is low
-
-### ✍️ Writer Agent
-- **Acts as**: Communications Specialist
-- **Transforms**: Raw data into human-friendly insights
-- **Formats**: Markdown tables, bullet points, key highlights
 
 ## Project Structure
 
 ```
-chatbot/
-├── __init__.py              # Package initialization
-├── main.py                  # Entry point and CLI
-├── config.example.env       # Example environment configuration
+synthio/
+├── chatbot/
+│   ├── __init__.py              # Package initialization
+│   ├── main.py                  # CLI entry point
+│   ├── config.example.env       # Example environment configuration
+│   │
+│   ├── core/                    # Core functionality
+│   │   ├── config.py           # Settings management + LangSmith setup
+│   │   ├── database.py         # Database connection and queries
+│   │   ├── models.py           # Data models and state definitions
+│   │   ├── schema.py           # Schema extraction and documentation
+│   │   └── tracing.py          # LangSmith tracing utilities
+│   │
+│   ├── agents/                  # Agent implementations
+│   │   ├── base.py             # Base agent class with LLM invocation
+│   │   ├── guardrail.py        # Security and relevance filter
+│   │   ├── planner.py          # Natural language instruction generator
+│   │   ├── sql_generator.py    # SQL query builder and executor
+│   │   ├── validator.py        # Result validation agent
+│   │   └── writer.py           # Response writing agent
+│   │
+│   ├── prompts/                 # Jinja2 prompt templates
+│   │   ├── guardrail.j2        # Security filter prompts
+│   │   ├── planner.j2          # Business analysis prompts
+│   │   ├── sql_generator.j2    # SQL generation prompts
+│   │   ├── validator.j2        # Validation prompts
+│   │   └── writer.j2           # Response writing prompts
+│   │
+│   ├── graph/                   # LangGraph workflow
+│   │   ├── nodes.py            # Node definitions
+│   │   └── workflow.py         # Workflow orchestration
+│   │
+│   └── ui/                      # Gradio Web Interface
+│       ├── __init__.py
+│       └── app.py              # Gradio app implementation
 │
-├── core/                    # Core functionality
-│   ├── config.py           # Settings management
-│   ├── database.py         # Database connection and queries
-│   ├── models.py           # Data models and state definitions
-│   └── schema.py           # Schema extraction and documentation
-│
-├── agents/                  # Agent implementations
-│   ├── base.py             # Base agent class
-│   ├── planner.py          # Natural language instruction generator
-│   ├── sql_generator.py    # SQL query builder and executor
-│   ├── validator.py        # Result validation agent
-│   └── writer.py           # Response writing agent
-│
-├── prompts/                 # Jinja2 prompt templates
-│   ├── planner.jinja       # Business analysis prompts
-│   ├── sql_generator.jinja # SQL generation prompts
-│   ├── validator.jinja     # Validation prompts
-│   └── writer.jinja        # Response writing prompts
-│
-└── graph/                   # LangGraph workflow
-    ├── nodes.py            # Node definitions
-    └── workflow.py         # Workflow orchestration
+├── data/                        # CSV data files
+├── tests/                       # Test suite
+├── run_ui.py                   # Web UI launcher
+├── run_chatbot.py              # CLI launcher
+├── pyproject.toml              # Project configuration
+└── requirements.txt            # Dependencies
 ```
 
 ## Installation
@@ -165,21 +180,40 @@ pip install -e .
    cp chatbot/config.example.env .env
    ```
 
-2. Edit `.env` and add your API key:
-   ```
-   OPENAI_API_KEY=sk-your-key-here
-   ```
+2. Edit `.env` and add your API keys (see LLM Providers section below)
 
 ## Usage
 
-### Interactive Mode
+### Web UI (Recommended)
 
+Launch the Gradio web interface:
+
+```bash
+python run_ui.py
+```
+
+Options:
+```bash
+python run_ui.py --port 8080        # Custom port
+python run_ui.py --host 0.0.0.0     # Allow external access
+python run_ui.py --share            # Create public share link
+```
+
+The UI features:
+- 💬 Clean chat interface
+- ⏳ Loading animation while processing
+- 📝 Collapsible SQL query viewer
+- 🔄 "New Chat" button for fresh conversations
+- 📱 Responsive design
+
+### CLI Mode
+
+Interactive mode:
 ```bash
 python run_chatbot.py
 ```
 
-### Single Question Mode
-
+Single question:
 ```bash
 python run_chatbot.py -q "What are the top 5 doctors by prescription count?"
 ```
@@ -195,34 +229,48 @@ chatbot = SynthioChatbot(db_path="synthio.db")
 response = chatbot.ask_sync("Show me all doctors in Territory 1")
 print(response)
 
-# Get full details including the planner's instructions and SQL
+# Get full details including SQL
 import asyncio
 result = asyncio.run(chatbot.ask_with_details("List all accounts"))
 print("Instructions:", result["query_plan"]["instructions"])
 print("SQL:", result["sql_query"])
 print("Response:", result["final_response"])
+print("Blocked:", not result["guardrail_passed"])
 ```
 
-## Example Questions
+## Guardrail Protection
 
-- "How many doctors are in each territory?"
-- "What are the top 10 HCPs by total prescriptions?"
-- "Show me the prescription trend for GAZYVA by month"
-- "Which sales reps have the most completed activities?"
-- "What is the payor mix for Hospital accounts?"
-- "List doctors with estimated market share above 10%"
-- "Compare new vs total prescriptions by specialty"
+The Guardrail Agent filters queries to ensure:
+
+### ✅ Allowed Queries
+- Doctor/HCP information, rankings, performance
+- Prescription trends, counts, comparisons
+- Sales rep activities and performance
+- Territory and regional analysis
+- Account/facility information
+- Market share and patient metrics
+- Insurance/payor distribution
+
+### ❌ Blocked Queries
+- Off-topic questions (weather, sports, coding)
+- Prompt injection ("ignore instructions", "pretend you are")
+- SQL injection attempts
+- Medical advice requests
+- Personal data requests (SSN, salaries)
+- Harmful content requests
+
+When blocked, users receive a friendly message explaining what types of questions can be asked.
 
 ## LLM Providers
 
 ### OpenAI
 ```bash
 LLM_PROVIDER=openai
-LLM_MODEL=gpt-4o-mini
+LLM_MODEL=gpt_model_name
 OPENAI_API_KEY=sk-your-key-here
 ```
 
-### Azure OpenAI (Recommended for Enterprise)
+### Azure OpenAI
 ```bash
 LLM_PROVIDER=azure_openai
 AZURE_OPENAI_API_KEY=your-azure-api-key
@@ -235,13 +283,55 @@ AZURE_OPENAI_API_VERSION=2024-02-01
 ```bash
 uv pip install langchain-anthropic
 LLM_PROVIDER=anthropic
-LLM_MODEL=claude-3-5-sonnet-20241022
+LLM_MODEL=anthropic_model_name
 ANTHROPIC_API_KEY=sk-ant-your-key-here
 ```
 
-### Ollama (local)
+### Ollama (Local)
 ```bash
 uv pip install langchain-ollama
 LLM_PROVIDER=ollama
 LLM_MODEL=llama3.2
 ```
+
+## LangSmith Observability
+
+Enable production-grade tracing and monitoring:
+
+```bash
+# In your .env file
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=lsv2_pt_your-key-here
+LANGSMITH_PROJECT=synthio-chatbot
+ENVIRONMENT=production
+```
+
+LangSmith provides:
+- 📊 Full trace visualization of agent workflows
+- ⏱️ Latency tracking for each LLM call
+- 💰 Token usage monitoring
+- 🐛 Error tracking and debugging
+- 📈 Performance analytics over time
+
+Get your API key at [smith.langchain.com](https://smith.langchain.com)
+
+## Database Schema
+
+The chatbot works with pharmaceutical sales data:
+
+### Dimension Tables
+- **hcp_dim** - Healthcare professionals (doctors)
+- **account_dim** - Hospitals and clinics
+- **rep_dim** - Sales representatives
+- **territory_dim** - Geographic territories
+- **date_dim** - Calendar/time dimensions
+
+### Fact Tables
+- **fact_rx** - Prescription data (TRx, NRx counts)
+- **fact_rep_activity** - Sales rep interactions
+- **fact_ln_metrics** - Market intelligence metrics
+- **fact_payor_mix** - Insurance/payor breakdown
+
+## License
+
+Apache 2.0 - See [LICENSE](LICENSE) for details.
